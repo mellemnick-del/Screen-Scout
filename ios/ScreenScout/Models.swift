@@ -1,7 +1,8 @@
-import SwiftUI
+import Foundation
 
 // These mirror the JSON the backend returns from POST /api/review.
 // Keys arrive in snake_case and are converted by JSONCoding below.
+// Colors, labels and icons for these types live in Theme.swift.
 
 struct ReviewResult: Codable, Identifiable, Hashable {
     let videoId: String
@@ -49,6 +50,11 @@ struct Report: Codable, Hashable {
         categories.first { $0.category == category }
             ?? CategoryRating(category: category, level: .none, details: "Nothing found.")
     }
+
+    /// How many categories had anything at all.
+    var flaggedCategoryCount: Int {
+        Category.allCases.filter { rating(for: $0).level != .none }.count
+    }
 }
 
 struct CategoryRating: Codable, Hashable {
@@ -70,65 +76,29 @@ struct FlaggedMoment: Codable, Hashable, Identifiable {
         guard !parts.isEmpty, parts.allSatisfy({ $0 != nil }) else { return nil }
         return parts.compactMap { $0 }.reduce(0) { $0 * 60 + $1 }
     }
+
+    func link(in videoURL: String) -> URL? {
+        guard let seconds else { return nil }
+        return URL(string: "\(videoURL)&t=\(seconds)s")
+    }
 }
 
-enum Verdict: String, Codable, Hashable {
+enum Verdict: String, Codable, Hashable, CaseIterable {
     case safe
     case caution
     case notRecommended = "not_recommended"
-
-    var label: String {
-        switch self {
-        case .safe: "Safe"
-        case .caution: "Use Caution"
-        case .notRecommended: "Not Recommended"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .safe: .green
-        case .caution: .orange
-        case .notRecommended: .red
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .safe: "checkmark.shield.fill"
-        case .caution: "exclamationmark.triangle.fill"
-        case .notRecommended: "xmark.octagon.fill"
-        }
-    }
 }
 
 enum Fit: String, Codable, Hashable {
     case goodFit = "good_fit"
     case watchTogether = "watch_together"
     case skip
-
-    var label: String {
-        switch self {
-        case .goodFit: "Good fit for your child"
-        case .watchTogether: "Watch together"
-        case .skip: "Skip this one"
-        }
-    }
 }
 
 enum Level: String, Codable, Hashable, CaseIterable {
     case none, mild, moderate, strong, severe
 
     var index: Int { Level.allCases.firstIndex(of: self) ?? 0 }
-
-    var color: Color {
-        switch self {
-        case .none, .mild: Color(red: 0.45, green: 0.72, blue: 0.52)
-        case .moderate: Color(red: 0.91, green: 0.72, blue: 0.27)
-        case .strong: Color(red: 0.89, green: 0.50, blue: 0.27)
-        case .severe: Color(red: 0.79, green: 0.26, blue: 0.23)
-        }
-    }
 }
 
 enum Category: String, Codable, Hashable, CaseIterable, Identifiable {
@@ -143,34 +113,6 @@ enum Category: String, Codable, Hashable, CaseIterable, Identifiable {
     case overstimulation
 
     var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .violence: "Violence"
-        case .scaryOrDisturbing: "Scary or disturbing"
-        case .language: "Language"
-        case .sexualContent: "Sexual content"
-        case .dangerousImitableBehavior: "Stunts kids may copy"
-        case .badBehaviorAndAttitudes: "Bad behavior and attitudes"
-        case .commercialism: "Ads and consumerism"
-        case .misleadingOrHijackedCharacters: "Misused kids' characters"
-        case .overstimulation: "Overstimulation"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .violence: "hand.raised.fill"
-        case .scaryOrDisturbing: "eye.trianglebadge.exclamationmark"
-        case .language: "text.bubble.fill"
-        case .sexualContent: "heart.slash.fill"
-        case .dangerousImitableBehavior: "flame.fill"
-        case .badBehaviorAndAttitudes: "face.dashed.fill"
-        case .commercialism: "cart.fill"
-        case .misleadingOrHijackedCharacters: "theatermasks.fill"
-        case .overstimulation: "waveform.path.ecg"
-        }
-    }
 }
 
 enum JSONCoding {

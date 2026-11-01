@@ -8,6 +8,8 @@ struct ScreenScoutApp: App {
         WindowGroup {
             ContentView()
                 .environment(history)
+                .fontDesign(.rounded)
+                .tint(Theme.grape)
         }
     }
 }

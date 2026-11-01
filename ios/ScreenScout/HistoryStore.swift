@@ -22,6 +22,11 @@ final class HistoryStore {
         save()
     }
 
+    func remove(_ result: ReviewResult) {
+        items.removeAll { $0.id == result.id }
+        save()
+    }
+
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
               let decoded = try? JSONCoding.decoder.decode([ReviewResult].self, from: data)

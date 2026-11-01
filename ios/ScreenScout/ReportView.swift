@@ -3,263 +3,593 @@ import SwiftUI
 struct ReportView: View {
     let result: ReviewResult
 
+    @State private var selectedCategory: Category?
+
     private var report: Report { result.report }
     private var video: VideoInfo { result.video }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-
-                Card("What happens in it") {
-                    Text(report.summary)
-                }
-
-                Card("Content breakdown") {
-                    VStack(spacing: 0) {
-                        ForEach(Category.allCases) { category in
-                            let rating = report.rating(for: category)
-                            CategoryRow(
-                                symbol: category.symbol,
-                                title: category.label,
-                                level: rating.level,
-                                details: rating.details
-                            )
-                            Divider()
-                        }
-                        CategoryRow(
-                            symbol: "graduationcap.fill",
-                            title: "Educational value",
-                            level: report.educationalValue,
-                            details: nil,
-                            positive: true
-                        )
-                    }
-                }
-
-                Card("Moments to know about") {
-                    if report.flaggedMoments.isEmpty {
-                        Text("Nothing specific to flag.").foregroundStyle(.secondary)
-                    } else {
-                        VStack(alignment: .leading, spacing: 12) {
-                            ForEach(report.flaggedMoments) { moment in
-                                MomentRow(moment: moment, videoURL: video.url)
-                            }
-                        }
-                    }
-                }
-
-                Card("The good stuff") {
-                    BulletList(items: report.positives, empty: "None noted.")
-                }
-
-                Card("Talk about it") {
-                    BulletList(items: report.talkAboutIt, empty: "None noted.")
-                }
-
-                footnote
+            VStack(spacing: 18) {
+                hero
+                    .popIn()
+                verdictCard
+                    .popIn(delay: 0.06)
+                summaryCard
+                    .popIn(delay: 0.12)
+                breakdownCard
+                    .popIn(delay: 0.18)
+                learningCard
+                    .popIn(delay: 0.22)
+                momentsCard
+                    .popIn(delay: 0.26)
+                goodStuffCard
+                    .popIn(delay: 0.3)
+                talkCard
+                    .popIn(delay: 0.34)
+                howWeScouted
+                    .popIn(delay: 0.38)
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("Review")
+        .background(Theme.background.ignoresSafeArea())
+        .navigationTitle("Scout Report")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if let url = URL(string: video.url) {
-                    Link(destination: url) {
-                        Image(systemName: "play.rectangle")
-                    }
-                    .accessibilityLabel("Open video")
-                }
                 ShareLink(item: shareText) {
                     Image(systemName: "square.and.arrow.up")
                 }
+                .accessibilityLabel("Share report")
             }
+        }
+        .sheet(item: $selectedCategory) { category in
+            CategoryDetailSheet(
+                category: category,
+                rating: report.rating(for: category),
+                moments: report.flaggedMoments.filter { $0.category == category },
+                videoURL: video.url
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(32)
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            AsyncImage(url: video.thumbnail) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Color.secondary.opacity(0.15)
-            }
-            .frame(maxWidth: .infinity)
+    // MARK: Hero
+
+    private var hero: some View {
+        Color.clear
             .aspectRatio(16 / 9, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                AsyncImage(url: video.thumbnail) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Theme.heroGradient
+                }
+            }
+            .overlay {
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.8)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(video.title)
+                        .font(.title3.weight(.heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                    Text("\(video.channel) · \(formatDuration(video.duration))")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                .padding(16)
+            }
+            .overlay {
+                if let url = URL(string: video.url) {
+                    Link(destination: url) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 54))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, Theme.coral)
+                            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                    }
+                    .accessibilityLabel("Watch on YouTube")
+                    .offset(y: -12)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .shadow(color: .black.opacity(0.12), radius: 14, y: 8)
+    }
 
-            Text(video.title)
-                .font(.title3.bold())
-            Text("\(video.channel) · \(formatDuration(video.duration))")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    // MARK: Verdict
 
-            HStack(spacing: 8) {
-                Label(report.verdict.label, systemImage: report.verdict.symbol)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(report.verdict.color)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(report.verdict.color.opacity(0.15), in: Capsule())
-                Text("Ages \(report.recommendedMinAge)+")
-                    .font(.subheadline.bold())
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(.background, in: Capsule())
-                    .overlay(Capsule().stroke(.quaternary))
+    private var verdictCard: some View {
+        let verdict = report.verdict
+        return VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle().fill(verdict.color.gradient)
+                    Text(verdict.emoji)
+                        .font(.system(size: 40))
+                }
+                .frame(width: 78, height: 78)
+                .shadow(color: verdict.color.opacity(0.45), radius: 10, y: 5)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(verdict.label)
+                        .font(.largeTitle.weight(.heavy))
+                        .foregroundStyle(verdict.textColor)
+                    AgeBadge(age: report.recommendedMinAge)
+                }
+                Spacer(minLength: 0)
             }
 
             if result.childAge > 0 {
-                Text("For your \(result.childAge) year old: \(report.fitForChild.label)")
-                    .font(.subheadline.weight(.semibold))
+                Label(report.fitForChild.label(age: result.childAge), systemImage: report.fitForChild.symbol)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(report.fitForChild.color.gradient, in: Capsule())
             }
 
-            Text(report.headline)
-                .font(.headline)
+            KidMeter(verdict: verdict)
+
+            // The Scout's one-line take, as a speech bubble
+            HStack(alignment: .top, spacing: 10) {
+                ScoutBadge(size: 38)
+                Text(report.headline)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Theme.ink)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
+        .cardStyle(tint: verdict.color)
+    }
+
+    // MARK: Summary
+
+    private var summaryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "What happens", symbol: "film.fill", color: Theme.sky)
+            Text(report.summary)
+                .font(.body)
+                .foregroundStyle(Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .cardStyle()
+    }
+
+    // MARK: Breakdown grid
+
+    private var breakdownCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "What's inside", symbol: "square.grid.2x2.fill", color: Theme.grape)
+            Text(breakdownSubtitle)
+                .font(.subheadline)
+                .foregroundStyle(Theme.softInk)
+
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                spacing: 12
+            ) {
+                ForEach(Category.allCases) { category in
+                    Button {
+                        selectedCategory = category
+                    } label: {
+                        CategoryTile(category: category, level: report.rating(for: category).level)
+                    }
+                    .buttonStyle(BouncyButtonStyle())
+                }
+            }
+            .padding(.top, 4)
+        }
+        .cardStyle()
+    }
+
+    private var breakdownSubtitle: String {
+        switch report.flaggedCategoryCount {
+        case 0: "All clear across the board. Tap any tile to learn more."
+        case 1: "1 thing to know about. Tap any tile for details."
+        default: "\(report.flaggedCategoryCount) things to know about. Tap any tile for details."
         }
     }
 
-    private var footnote: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Confidence: \(report.confidence.capitalized). \(report.confidenceReason)")
-            Text("Reviewed \(video.framesReviewed) frames\(video.hadTranscript ? " and the full transcript" : ", no transcript available"). Reviewed \(result.createdDate.formatted(date: .abbreviated, time: .omitted)).")
-            Text("AI reviews can miss things. Spot-check anything that matters to you.")
+    // MARK: Learning
+
+    private var learningCard: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "Learning value", symbol: "graduationcap.fill", color: Theme.sky)
+                Text(learningBlurb)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.softInk)
+            }
+            Spacer(minLength: 0)
+            StarRating(filled: report.educationalValue.index)
+        }
+        .cardStyle(tint: Theme.sky)
+    }
+
+    private var learningBlurb: String {
+        switch report.educationalValue {
+        case .none: "Just for fun. No real learning here."
+        case .mild: "A little learning sprinkled in."
+        case .moderate: "Some solid learning value."
+        case .strong: "Packed with learning."
+        case .severe: "Seriously educational!"
+        }
+    }
+
+    // MARK: Moments timeline
+
+    private var momentsCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            SectionHeader(title: "Moments to know", symbol: "flag.fill", color: Theme.coral)
+
+            if report.flaggedMoments.isEmpty {
+                HStack(spacing: 12) {
+                    Text("🎉").font(.largeTitle)
+                    Text("Nothing specific to flag. Nice!")
+                        .font(.headline)
+                        .foregroundStyle(Theme.ink)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(report.flaggedMoments.enumerated()), id: \.element.id) { index, moment in
+                        TimelineRow(
+                            moment: moment,
+                            videoURL: video.url,
+                            isLast: index == report.flaggedMoments.count - 1
+                        )
+                    }
+                }
+            }
+        }
+        .cardStyle()
+    }
+
+    // MARK: Good stuff
+
+    private var goodStuffCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(title: "The good stuff", symbol: "sparkles", color: Theme.mint)
+            if report.positives.isEmpty {
+                Text("Nothing that really stands out.")
+                    .foregroundStyle(Theme.softInk)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(report.positives, id: \.self) { item in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundStyle(Theme.mint)
+                            Text(item)
+                                .foregroundStyle(Theme.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+        }
+        .cardStyle(tint: Theme.mint)
+    }
+
+    // MARK: Talk about it
+
+    private var talkCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(title: "Talk about it", symbol: "bubble.left.and.bubble.right.fill", color: Theme.grape)
+            Text("Easy conversation starters for after the video.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.softInk)
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(report.talkAboutIt.enumerated()), id: \.offset) { index, question in
+                    HStack(alignment: .top, spacing: 12) {
+                        Text("\(index + 1)")
+                            .font(.subheadline.weight(.heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 28, height: 28)
+                            .background(Theme.grape.gradient, in: Circle())
+                        Text(question)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(Theme.ink)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
+            }
+        }
+        .cardStyle(tint: Theme.grape)
+    }
+
+    // MARK: How we scouted
+
+    private var howWeScouted: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("How we scouted this")
+                .font(.headline.weight(.heavy))
+                .foregroundStyle(Theme.ink)
+            Label("\(video.framesReviewed) moments from the video checked", systemImage: "photo.stack.fill")
+            Label(
+                video.hadTranscript ? "Everything said was read" : "No captions available to read",
+                systemImage: video.hadTranscript ? "captions.bubble.fill" : "captions.bubble"
+            )
+            Label("Confidence: \(report.confidence.capitalized)", systemImage: "checkmark.shield.fill")
+            Text(report.confidenceReason)
+                .padding(.top, 2)
+            Text("Scouted \(result.createdDate.formatted(date: .abbreviated, time: .omitted)). AI can miss things, so trust your gut too.")
+                .padding(.top, 4)
         }
         .font(.footnote)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Theme.softInk)
+        .cardStyle()
     }
 
     private var shareText: String {
         """
-        Screen Scout review: \(video.title)
-        \(report.verdict.label) · Ages \(report.recommendedMinAge)+
+        \(report.verdict.emoji) \(report.verdict.label) · Ages \(report.recommendedMinAge)+
+        \(video.title)
+
         \(report.headline)
 
         \(report.summary)
 
         \(video.url)
+        Scouted with Screen Scout
         """
     }
 }
 
 // MARK: - Pieces
 
-private struct Card<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    init(_ title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
+/// Three-zone meter showing where this video lands.
+struct KidMeter: View {
+    let verdict: Verdict
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title.uppercased())
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            content
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
-    }
-}
-
-private struct CategoryRow: View {
-    let symbol: String
-    let title: String
-    let level: Level
-    let details: String?
-    var positive = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Label(title, systemImage: symbol)
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                LevelMeter(level: level, positive: positive)
-            }
-            if let details, level != .none {
-                Text(details)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 10)
-    }
-}
-
-private struct LevelMeter: View {
-    let level: Level
-    var positive = false
-
-    private var fill: Color { positive ? .accentColor : level.color }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            HStack(spacing: 3) {
-                ForEach(1...4, id: \.self) { i in
+        HStack(alignment: .top, spacing: 6) {
+            ForEach(Verdict.allCases, id: \.self) { zone in
+                let active = zone == verdict
+                VStack(spacing: 6) {
                     Capsule()
-                        .fill(i <= level.index ? fill : Color.secondary.opacity(0.2))
-                        .frame(width: 14, height: 7)
+                        .fill(active ? AnyShapeStyle(zone.color.gradient) : AnyShapeStyle(zone.color.opacity(0.22)))
+                        .frame(height: active ? 14 : 10)
+                        .overlay {
+                            if active {
+                                Capsule().stroke(.white.opacity(0.8), lineWidth: 2)
+                            }
+                        }
+                    Text(zone.label)
+                        .font(.caption2.weight(.heavy))
+                        .foregroundStyle(active ? zone.textColor : Theme.softInk.opacity(0.7))
                 }
             }
-            Text(level.rawValue.capitalized)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 66, alignment: .leading)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(level.rawValue)
+        .accessibilityLabel("Rating: \(verdict.label)")
     }
 }
 
-private struct MomentRow: View {
+struct CategoryTile: View {
+    let category: Category
+    let level: Level
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack {
+                Circle().fill(category.color.gradient)
+                Image(systemName: category.symbol)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 36, height: 36)
+
+            Text(category.shortLabel)
+                .font(.subheadline.weight(.heavy))
+                .foregroundStyle(Theme.ink)
+                .multilineTextAlignment(.leading)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+
+            LevelPill(level: level)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 138, alignment: .topLeading)
+        .background(category.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(category.color.opacity(level == .none ? 0.15 : 0.5), lineWidth: level == .none ? 1 : 2)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Shows details")
+    }
+}
+
+struct StarRating: View {
+    let filled: Int
+    var total = 4
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<total, id: \.self) { i in
+                Image(systemName: i < filled ? "star.fill" : "star")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(i < filled ? Theme.sunshine : Theme.softInk.opacity(0.35))
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(filled) out of \(total) stars")
+    }
+}
+
+struct TimestampChip: View {
     let moment: FlaggedMoment
     let videoURL: String
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            if let seconds = moment.seconds, let url = URL(string: "\(videoURL)&t=\(seconds)s") {
-                Link(moment.timestamp, destination: url)
-                    .font(.subheadline.monospacedDigit().bold())
-                    .frame(width: 60, alignment: .leading)
-            } else {
-                Text(moment.timestamp)
-                    .font(.subheadline.bold())
-                    .frame(width: 60, alignment: .leading)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(moment.description)
-                    .font(.subheadline)
-                Text(moment.category.label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        if let url = moment.link(in: videoURL) {
+            Link(destination: url) { chip(showPlay: true) }
+                .accessibilityLabel("Watch at \(moment.timestamp)")
+        } else {
+            chip(showPlay: false)
         }
+    }
+
+    private func chip(showPlay: Bool) -> some View {
+        HStack(spacing: 4) {
+            if showPlay {
+                Image(systemName: "play.fill")
+            }
+            Text(moment.timestamp.capitalized)
+        }
+        .font(.caption.weight(.heavy).monospacedDigit())
+        .foregroundStyle(.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(moment.category.color.gradient, in: Capsule())
     }
 }
 
-private struct BulletList: View {
-    let items: [String]
-    let empty: String
+struct TimelineRow: View {
+    let moment: FlaggedMoment
+    let videoURL: String
+    let isLast: Bool
 
     var body: some View {
-        if items.isEmpty {
-            Text(empty).foregroundStyle(.secondary)
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(items, id: \.self) { item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("•")
-                        Text(item)
-                    }
+        HStack(alignment: .top, spacing: 14) {
+            VStack(spacing: 0) {
+                Circle()
+                    .fill(moment.category.color)
+                    .frame(width: 14, height: 14)
+                    .overlay(Circle().stroke(Theme.card, lineWidth: 3))
+                    .padding(.top, 6)
+                if !isLast {
+                    Rectangle()
+                        .fill(Theme.cardBorder)
+                        .frame(width: 3)
+                        .frame(maxHeight: .infinity)
                 }
             }
+            .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 6) {
+                TimestampChip(moment: moment, videoURL: videoURL)
+                Text(moment.description)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(moment.category.shortLabel)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(moment.category.color)
+            }
+            .padding(.bottom, isLast ? 0 : 18)
         }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Pops up when a tile is tapped.
+struct CategoryDetailSheet: View {
+    let category: Category
+    let rating: CategoryRating
+    let moments: [FlaggedMoment]
+    let videoURL: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle().fill(category.color.gradient)
+                        Image(systemName: category.symbol)
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 60, height: 60)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(category.label)
+                            .font(.title2.weight(.heavy))
+                            .foregroundStyle(Theme.ink)
+                        LevelPill(level: rating.level)
+                    }
+                }
+
+                LevelScale(level: rating.level)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("What we found")
+                        .font(.headline.weight(.heavy))
+                        .foregroundStyle(Theme.ink)
+                    Text(rating.details)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !moments.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("When it happens")
+                            .font(.headline.weight(.heavy))
+                            .foregroundStyle(Theme.ink)
+                        ForEach(moments) { moment in
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                TimestampChip(moment: moment, videoURL: videoURL)
+                                Text(moment.description)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("What this covers")
+                        .font(.headline.weight(.heavy))
+                        .foregroundStyle(Theme.ink)
+                    Text(category.explainer)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.softInk)
+                }
+            }
+            .padding(24)
+            .padding(.top, 8)
+        }
+        .background(Theme.background.ignoresSafeArea())
+    }
+}
+
+/// Five-step bar from None to Intense.
+struct LevelScale: View {
+    let level: Level
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                ForEach(Level.allCases, id: \.self) { step in
+                    Capsule()
+                        .fill(step.index <= level.index ? level.color : Theme.softInk.opacity(0.18))
+                        .frame(height: 10)
+                }
+            }
+            HStack {
+                Text("None")
+                Spacer()
+                Text("Intense")
+            }
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(Theme.softInk)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Level: \(level.label)")
     }
 }
