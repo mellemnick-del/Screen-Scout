@@ -70,6 +70,7 @@ def _detach(conn, user_id: str) -> None:
         )
     else:
         conn.execute("DELETE FROM family_reviews WHERE family_id=?", (family_id,))
+        conn.execute("DELETE FROM kids WHERE family_id=?", (family_id,))
         conn.execute("DELETE FROM families WHERE id=?", (family_id,))
 
 
@@ -119,11 +120,14 @@ def record_review(conn, family_id: str, user_id: str, video_id: str) -> None:
     conn.execute("INSERT INTO review_events VALUES (?,?,?,?)", (family_id, user_id, video_id, time.time()))
 
 
-def save_to_family(conn, family_id: str, video_id: str, child_age: int, user_id: str) -> None:
+def save_to_family(conn, family_id: str, video_id: str, child_age: int, user_id: str, kid_id: str | None = None) -> None:
     conn.execute(
-        """INSERT INTO family_reviews VALUES (?,?,?,?,?)
-           ON CONFLICT(family_id, video_id, child_age) DO UPDATE SET added=excluded.added, added_by=excluded.added_by""",
-        (family_id, video_id, child_age, user_id, time.time()),
+        """INSERT INTO family_reviews (family_id, video_id, child_age, added_by, added, kid_id)
+           VALUES (?,?,?,?,?,?)
+           ON CONFLICT(family_id, video_id, child_age)
+           DO UPDATE SET added=excluded.added, added_by=excluded.added_by,
+                         kid_id=COALESCE(excluded.kid_id, family_reviews.kid_id)""",
+        (family_id, video_id, child_age, user_id, time.time(), kid_id),
     )
 
 
@@ -154,6 +158,7 @@ def me_payload(conn, user_id: str) -> dict:
             ],
             "max_members": MAX_MEMBERS,
             "usage": usage(conn, family_id),
+            "kids": list_kids(conn, family_id),
         },
     }
 
@@ -177,7 +182,7 @@ def join(conn, user_id: str, code: str) -> None:
     # If you were on your own, your saved reviews come with you.
     if not _other_members(conn, old_family_id, user_id):
         conn.execute(
-            """INSERT OR IGNORE INTO family_reviews
+            """INSERT OR IGNORE INTO family_reviews (family_id, video_id, child_age, added_by, added)
                SELECT ?, video_id, child_age, added_by, added FROM family_reviews WHERE family_id=?""",
             (family["id"], old_family_id),
         )
@@ -227,3 +232,77 @@ def delete_account(conn, user_id: str) -> str | None:
     conn.execute("UPDATE review_events SET user_id=NULL WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM users WHERE id=?", (user_id,))
     return user["apple_refresh_token"]
+
+
+# ---------- Kid profiles ----------
+
+MAX_KIDS = 10
+
+
+def kid_age(birth_year: int, birth_month: int, now: datetime | None = None) -> int:
+    now = now or datetime.now(timezone.utc)
+    age = now.year - birth_year - (1 if now.month < birth_month else 0)
+    return max(age, 0)
+
+
+def _birth_from_age(age: int) -> tuple[int, int]:
+    now = datetime.now(timezone.utc)
+    return now.year - age, now.month
+
+
+def _clean_kid(name: str | None, age: int | None) -> tuple[str | None, int | None]:
+    if name is not None:
+        name = " ".join(name.split())[:20]
+        if not name:
+            raise HTTPException(400, "Enter your kid's name.")
+    if age is not None and not 1 <= age <= 17:
+        raise HTTPException(400, "Age should be between 1 and 17.")
+    return name, age
+
+
+def list_kids(conn, family_id: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM kids WHERE family_id=? ORDER BY birth_year, birth_month, created", (family_id,)
+    ).fetchall()
+    return [
+        {"id": k["id"], "name": k["name"], "age": kid_age(k["birth_year"], k["birth_month"]), "color": k["color"]}
+        for k in rows
+    ]
+
+
+def get_kid(conn, family_id: str, kid_id: str):
+    kid = conn.execute("SELECT * FROM kids WHERE id=? AND family_id=?", (kid_id, family_id)).fetchone()
+    if kid is None:
+        raise HTTPException(404, "That kid profile wasn't found.")
+    return kid
+
+
+def add_kid(conn, user_id: str, name: str, age: int) -> None:
+    name, age = _clean_kid(name, age)
+    family_id = ensure_family(conn, user_id)
+    count = conn.execute("SELECT COUNT(*) FROM kids WHERE family_id=?", (family_id,)).fetchone()[0]
+    if count >= MAX_KIDS:
+        raise HTTPException(400, f"You can save up to {MAX_KIDS} kids.")
+    year, month = _birth_from_age(age)
+    conn.execute(
+        "INSERT INTO kids VALUES (?,?,?,?,?,?,?)",
+        (uuid.uuid4().hex, family_id, name, year, month, count % 8, time.time()),
+    )
+
+
+def update_kid(conn, user_id: str, kid_id: str, name: str | None, age: int | None) -> None:
+    name, age = _clean_kid(name, age)
+    family_id = ensure_family(conn, user_id)
+    get_kid(conn, family_id, kid_id)
+    if name is not None:
+        conn.execute("UPDATE kids SET name=? WHERE id=?", (name, kid_id))
+    if age is not None:
+        year, month = _birth_from_age(age)
+        conn.execute("UPDATE kids SET birth_year=?, birth_month=? WHERE id=?", (year, month, kid_id))
+
+
+def delete_kid(conn, user_id: str, kid_id: str) -> None:
+    family_id = ensure_family(conn, user_id)
+    get_kid(conn, family_id, kid_id)
+    conn.execute("DELETE FROM kids WHERE id=?", (kid_id,))
+    conn.execute("UPDATE family_reviews SET kid_id=NULL WHERE kid_id=?", (kid_id,))

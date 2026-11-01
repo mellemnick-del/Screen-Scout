@@ -7,6 +7,7 @@ Settings (environment variables):
   SCOUT_APPLE_BUNDLE_ID   Must match the app's bundle identifier in Xcode
   SCOUT_MONTHLY_LIMIT     New reviews per family per month (default 50, 0 = unlimited)
   SCOUT_MAX_FAMILY_SIZE   People per family (default 6)
+  SCOUT_SUPPORT_EMAIL     Shown on the /privacy and /support pages
   APPLE_TEAM_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY_PATH
                           Optional. Lets account deletion revoke Apple sign-in (do before App Store)
 """
@@ -19,10 +20,11 @@ import time
 import uuid
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from . import auth, families
+from . import auth, families, pages
 from .analyzer import AnalysisError, analyze
 from .db import db
 from .youtube import VideoError, extract_video_id, gather
@@ -43,6 +45,16 @@ def root():
 @app.get("/health")
 def health():
     return OK
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy():
+    return pages.privacy_policy()
+
+
+@app.get("/support", response_class=HTMLResponse)
+def support():
+    return pages.support()
 
 
 # ---------- Accounts ----------
@@ -167,21 +179,55 @@ def remove_member(member_id: str, user: dict = Depends(auth.current_user)):
         return families.me_payload(conn, user["id"])
 
 
+class KidCreate(BaseModel):
+    name: str
+    age: int
+
+
+class KidUpdate(BaseModel):
+    name: str | None = None
+    age: int | None = None
+
+
+@app.post("/api/family/kids")
+def add_kid(body: KidCreate, user: dict = Depends(auth.current_user)):
+    with db() as conn:
+        families.add_kid(conn, user["id"], body.name, body.age)
+        return families.me_payload(conn, user["id"])
+
+
+@app.patch("/api/family/kids/{kid_id}")
+def update_kid(kid_id: str, body: KidUpdate, user: dict = Depends(auth.current_user)):
+    with db() as conn:
+        families.update_kid(conn, user["id"], kid_id, body.name, body.age)
+        return families.me_payload(conn, user["id"])
+
+
+@app.delete("/api/family/kids/{kid_id}")
+def delete_kid(kid_id: str, user: dict = Depends(auth.current_user)):
+    with db() as conn:
+        families.delete_kid(conn, user["id"], kid_id)
+        return families.me_payload(conn, user["id"])
+
+
 # ---------- Reviews ----------
 
 class ReviewRequest(BaseModel):
     url: str
     child_age: int | None = None
+    kid_id: str | None = None
     refresh: bool = False
 
 
-def _row_to_dict(row) -> dict:
+def _row_to_dict(row, kid: dict | None = None) -> dict:
     return {
         "video_id": row["video_id"],
         "child_age": row["child_age"],
         "created": row["created"],
         "video": json.loads(row["video"]),
         "report": json.loads(row["report"]),
+        "kid_id": kid["id"] if kid else None,
+        "kid_name": kid["name"] if kid else None,
     }
 
 
@@ -192,19 +238,24 @@ async def review(req: ReviewRequest, user: dict = Depends(auth.current_user)):
     except VideoError as e:
         raise HTTPException(400, str(e))
     age = req.child_age or 0
+    kid = None
 
     with db() as conn:
         family_id = families.ensure_family(conn, user["id"])
+        if req.kid_id:
+            k = families.get_kid(conn, family_id, req.kid_id)
+            kid = {"id": k["id"], "name": k["name"]}
+            age = families.kid_age(k["birth_year"], k["birth_month"])
         row = conn.execute("SELECT * FROM reviews WHERE video_id=? AND child_age=?", (video_id, age)).fetchone()
         if row and not req.refresh:
             # Already scouted (by anyone): free, just add it to this family's list.
-            families.save_to_family(conn, family_id, video_id, age, user["id"])
-            return {**_row_to_dict(row), "cached": True}
+            families.save_to_family(conn, family_id, video_id, age, user["id"], kid and kid["id"])
+            return {**_row_to_dict(row, kid), "cached": True}
         families.check_quota(conn, family_id)
 
     try:
         ev = await run_in_threadpool(gather, req.url, FRAMES, MAX_MINUTES)
-        report = await run_in_threadpool(analyze, ev, req.child_age)
+        report = await run_in_threadpool(analyze, ev, age or None)
     except (VideoError, AnalysisError) as e:
         raise HTTPException(422, str(e))
 
@@ -220,9 +271,10 @@ async def review(req: ReviewRequest, user: dict = Depends(auth.current_user)):
             (video_id, age, created, json.dumps(video), report.model_dump_json()),
         )
         families.record_review(conn, family_id, user["id"], video_id)
-        families.save_to_family(conn, family_id, video_id, age, user["id"])
+        families.save_to_family(conn, family_id, video_id, age, user["id"], kid and kid["id"])
     return {"video_id": video_id, "child_age": age, "created": created,
-            "video": video, "report": report.model_dump(), "cached": False}
+            "video": video, "report": report.model_dump(), "cached": False,
+            "kid_id": kid and kid["id"], "kid_name": kid and kid["name"]}
 
 
 @app.get("/api/reviews")
@@ -230,12 +282,16 @@ def list_reviews(user: dict = Depends(auth.current_user)):
     with db() as conn:
         family_id = families.ensure_family(conn, user["id"])
         rows = conn.execute(
-            """SELECT r.* FROM family_reviews f
+            """SELECT r.*, k.id AS kid_id, k.name AS kid_name FROM family_reviews f
                JOIN reviews r ON r.video_id = f.video_id AND r.child_age = f.child_age
+               LEFT JOIN kids k ON k.id = f.kid_id
                WHERE f.family_id = ? ORDER BY f.added DESC LIMIT 500""",
             (family_id,),
         ).fetchall()
-    return [{**_row_to_dict(r), "cached": True} for r in rows]
+    return [
+        {**_row_to_dict(r, {"id": r["kid_id"], "name": r["kid_name"]} if r["kid_id"] else None), "cached": True}
+        for r in rows
+    ]
 
 
 @app.delete("/api/reviews/{video_id}/{child_age}")
@@ -269,7 +325,8 @@ def import_reviews(body: ImportRequest, user: dict = Depends(auth.current_user))
             ).fetchone()
             if exists:
                 conn.execute(
-                    "INSERT OR IGNORE INTO family_reviews VALUES (?,?,?,?,?)",
+                    """INSERT OR IGNORE INTO family_reviews (family_id, video_id, child_age, added_by, added)
+                       VALUES (?,?,?,?,?)""",
                     (family_id, item.video_id, item.child_age, user["id"], time.time()),
                 )
     return OK

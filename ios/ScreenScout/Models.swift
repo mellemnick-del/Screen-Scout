@@ -11,8 +11,11 @@ struct ReviewResult: Codable, Identifiable, Hashable {
     let video: VideoInfo
     let report: Report
     var cached: Bool?
+    var kidId: String?
+    var kidName: String?
 
     var id: String { "\(videoId)-\(childAge)" }
+    var isSample: Bool { videoId == SampleData.videoId }
     var createdDate: Date { Date(timeIntervalSince1970: created) }
 }
 
@@ -78,7 +81,7 @@ struct FlaggedMoment: Codable, Hashable, Identifiable {
     }
 
     func link(in videoURL: String) -> URL? {
-        guard let seconds else { return nil }
+        guard let seconds, videoURL.hasPrefix("http") else { return nil }
         return URL(string: "\(videoURL)&t=\(seconds)s")
     }
 }
@@ -144,6 +147,9 @@ struct FamilyInfo: Codable, Hashable {
     let members: [Member]
     let maxMembers: Int
     let usage: Usage
+    let kids: [Kid]?
+
+    var kidList: [Kid] { kids ?? [] }
 
     /// "ABC123" shown as "ABC-123" so it's easier to read out loud.
     var formattedInviteCode: String {
@@ -162,6 +168,15 @@ struct Member: Codable, Hashable, Identifiable {
         let letters = name.split(separator: " ").prefix(2).compactMap { $0.first }
         return letters.isEmpty ? "?" : String(letters).uppercased()
     }
+}
+
+struct Kid: Codable, Hashable, Identifiable {
+    let id: String
+    let name: String
+    let age: Int
+    let color: Int
+
+    var initial: String { name.first.map { String($0).uppercased() } ?? "?" }
 }
 
 struct Usage: Codable, Hashable {

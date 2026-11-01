@@ -10,6 +10,7 @@ struct ScreenScoutApp: App {
             RootView()
                 .environment(auth)
                 .environment(history)
+                .environment(PendingScout.shared)
                 .fontDesign(.rounded)
                 .tint(Theme.grape)
         }
@@ -20,6 +21,7 @@ struct ScreenScoutApp: App {
 struct RootView: View {
     @Environment(AuthManager.self) private var auth
     @Environment(HistoryStore.self) private var history
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
 
     var body: some View {
         Group {
@@ -27,12 +29,17 @@ struct RootView: View {
             case .loading:
                 SplashView()
             case .signedOut:
-                SignInView()
+                if hasSeenOnboarding {
+                    SignInView()
+                } else {
+                    OnboardingView { hasSeenOnboarding = true }
+                }
             case .signedIn:
                 ContentView()
             }
         }
         .animation(.easeInOut(duration: 0.35), value: auth.state)
+        .animation(.easeInOut(duration: 0.35), value: hasSeenOnboarding)
         .task {
             await auth.restore()
             if auth.state == .signedIn {

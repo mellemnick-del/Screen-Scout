@@ -7,6 +7,7 @@ struct SignInView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var isWorking = false
+    @State private var showSample = false
 
     var body: some View {
         ZStack {
@@ -85,6 +86,15 @@ struct SignInView: View {
                                 .multilineTextAlignment(.center)
                         }
 
+                        Button {
+                            showSample = true
+                        } label: {
+                            Label("See a sample report", systemImage: "doc.text.magnifyingglass")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(Theme.grape)
+                        }
+                        .padding(.top, 4)
+
                         Text("No passwords to remember. We only use your Apple ID to keep your family's reviews in sync.")
                             .font(.footnote)
                             .foregroundStyle(Theme.softInk)
@@ -110,6 +120,9 @@ struct SignInView: View {
             }
         }
         .animation(.easeInOut, value: isWorking)
+        .sheet(isPresented: $showSample) {
+            SampleReportSheet()
+        }
     }
 }
 

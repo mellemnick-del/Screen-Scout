@@ -1,9 +1,17 @@
+import StoreKit
 import SwiftUI
+
+/// Public pages served by the Screen Scout server.
+enum AppLinks {
+    static var privacy: URL { Config.baseURL.appending(path: "privacy") }
+    static var support: URL { Config.baseURL.appending(path: "support") }
+}
 
 struct AccountView: View {
     @Environment(AuthManager.self) private var auth
     @Environment(HistoryStore.self) private var history
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.requestReview) private var requestReview
 
     @State private var joinCode = ""
     @State private var nameDraft = ""
@@ -16,6 +24,8 @@ struct AccountView: View {
     @State private var busy = false
     @State private var errorMessage: String?
     @State private var toast: String?
+    @State private var editingKid: Kid?
+    @State private var addingKid = false
 
     var body: some View {
         NavigationStack {
@@ -26,12 +36,16 @@ struct AccountView: View {
                             .popIn()
                         usageCard(me.family.usage)
                             .popIn(delay: 0.04)
+                        kidsCard(me.family)
+                            .popIn(delay: 0.06)
                         familyCard(me.family)
                             .popIn(delay: 0.08)
                         inviteCard(me.family)
                             .popIn(delay: 0.12)
                         joinCard
                             .popIn(delay: 0.16)
+                        aboutCard
+                            .popIn(delay: 0.18)
                         accountActions(me.family)
                             .popIn(delay: 0.2)
                     } else {
@@ -40,6 +54,8 @@ struct AccountView: View {
                     }
                 }
                 .padding(20)
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
             }
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Account")
@@ -51,6 +67,13 @@ struct AccountView: View {
                 }
             }
             .task { await auth.refreshMe() }
+            .sheet(item: $editingKid) { kid in
+                KidEditorSheet(kid: kid)
+            }
+            .sheet(isPresented: $addingKid) {
+                KidEditorSheet(kid: nil)
+            }
+            .sensoryFeedback(trigger: toast) { _, message in message == nil ? nil : .success }
             .overlay(alignment: .bottom) {
                 if let toast {
                     Text(toast)
@@ -171,6 +194,117 @@ struct AccountView: View {
             .accessibilityLabel("Edit your name")
         }
         .cardStyle()
+    }
+
+    private func kidsCard(_ family: FamilyInfo) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                SectionHeader(title: "Kids", symbol: "figure.and.child.holdinghands", color: Theme.mint)
+                Spacer(minLength: 0)
+                Button {
+                    addingKid = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.subheadline.weight(.heavy))
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .background(Theme.mint.gradient, in: Circle())
+                }
+                .accessibilityLabel("Add a kid")
+            }
+
+            if family.kidList.isEmpty {
+                Text("Add your kids so you can tap their name instead of picking an age. Everyone in your family sees them.")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.softInk)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(family.kidList) { kid in
+                        Button {
+                            editingKid = kid
+                        } label: {
+                            HStack(spacing: 12) {
+                                Avatar(initials: kid.initial, color: kid.themeColor, size: 42)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(kid.name)
+                                        .font(.headline)
+                                        .foregroundStyle(Theme.ink)
+                                    Text(kid.age == 1 ? "1 year old" : "\(kid.age) years old")
+                                        .font(.subheadline)
+                                        .foregroundStyle(Theme.softInk)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.heavy))
+                                    .foregroundStyle(Theme.softInk.opacity(0.6))
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Edit")
+                    }
+                }
+            }
+        }
+        .cardStyle(tint: Theme.mint)
+    }
+
+    private var aboutCard: some View {
+        VStack(spacing: 0) {
+            Link(destination: AppLinks.privacy) {
+                aboutRow("Privacy Policy", symbol: "hand.raised.fill", color: Theme.sky)
+            }
+            Divider().padding(.leading, 52)
+            Link(destination: AppLinks.support) {
+                aboutRow("Help & Support", symbol: "questionmark.circle.fill", color: Theme.grape)
+            }
+            Divider().padding(.leading, 52)
+            Button {
+                requestReview()
+            } label: {
+                aboutRow("Rate Screen Scout", symbol: "star.fill", color: Theme.sunshine)
+            }
+            Divider().padding(.leading, 52)
+            HStack(spacing: 14) {
+                Image(systemName: "info.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(Theme.softInk)
+                    .frame(width: 28)
+                Text("Version \(appVersion)")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.softInk)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 48)
+        }
+        .cardStyle(padding: 8)
+    }
+
+    private func aboutRow(_ title: String, symbol: String, color: Color) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: symbol)
+                .font(.headline)
+                .foregroundStyle(color)
+                .frame(width: 28)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(Theme.ink)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.heavy))
+                .foregroundStyle(Theme.softInk.opacity(0.6))
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 52)
+        .contentShape(Rectangle())
+    }
+
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = info?["CFBundleVersion"] as? String ?? "1"
+        return "\(version) (\(build))"
     }
 
     private func usageCard(_ usage: Usage) -> some View {

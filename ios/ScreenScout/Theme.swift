@@ -54,6 +54,8 @@ enum Theme {
         endPoint: .bottomTrailing
     )
 
+    static let kidColors: [Color] = [coral, sky, mint, grape, tangerine, bubblegum, teal, lavender]
+
     static let buttonGradient = LinearGradient(
         colors: [coral, tangerine],
         startPoint: .leading,
@@ -64,6 +66,15 @@ enum Theme {
 // MARK: - How each rating looks and reads
 
 extension Verdict {
+    /// The buzz you feel when a report opens.
+    var feedback: SensoryFeedback {
+        switch self {
+        case .safe: .success
+        case .caution: .warning
+        case .notRecommended: .error
+        }
+    }
+
     var label: String {
         switch self {
         case .safe: "Good to Go"
@@ -99,11 +110,12 @@ extension Verdict {
 }
 
 extension Fit {
-    func label(age: Int) -> String {
+    func label(age: Int, kidName: String? = nil) -> String {
+        let who = kidName ?? "your \(age)-year-old"
         switch self {
-        case .goodFit: "Great pick for your \(age)-year-old"
-        case .watchTogether: "Best watched together"
-        case .skip: "Not for your \(age)-year-old yet"
+        case .goodFit: return "Great pick for \(who)"
+        case .watchTogether: return kidName.map { "Best watched together with \($0)" } ?? "Best watched together"
+        case .skip: return "Not for \(who) yet"
         }
     }
 
@@ -122,6 +134,10 @@ extension Fit {
         case .skip: Theme.coral
         }
     }
+}
+
+extension Kid {
+    var themeColor: Color { Theme.kidColors[abs(color) % Theme.kidColors.count] }
 }
 
 extension Level {
@@ -273,15 +289,20 @@ extension View {
 
 struct PopIn: ViewModifier {
     let delay: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shown = false
 
     func body(content: Content) -> some View {
         content
             .opacity(shown ? 1 : 0)
-            .offset(y: shown ? 0 : 18)
+            .offset(y: shown || reduceMotion ? 0 : 18)
             .onAppear {
-                withAnimation(.spring(response: 0.55, dampingFraction: 0.8).delay(delay)) {
-                    shown = true
+                if reduceMotion {
+                    withAnimation(.easeOut(duration: 0.2)) { shown = true }
+                } else {
+                    withAnimation(.spring(response: 0.55, dampingFraction: 0.8).delay(delay)) {
+                        shown = true
+                    }
                 }
             }
     }
@@ -302,6 +323,7 @@ struct BouncyButtonStyle: ButtonStyle {
 struct ScoutBadge: View {
     var size: CGFloat = 56
     var animated = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -309,7 +331,7 @@ struct ScoutBadge: View {
             Image(systemName: "binoculars.fill")
                 .font(.system(size: size * 0.42, weight: .bold))
                 .foregroundStyle(.white)
-                .symbolEffect(.pulse, options: .repeating, isActive: animated)
+                .symbolEffect(.pulse, options: .repeating, isActive: animated && !reduceMotion)
         }
         .frame(width: size, height: size)
         .overlay(alignment: .topTrailing) {

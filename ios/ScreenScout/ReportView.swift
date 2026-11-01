@@ -4,6 +4,8 @@ struct ReportView: View {
     let result: ReviewResult
 
     @State private var selectedCategory: Category?
+    @State private var appeared = false
+    @State private var shareImage: Image?
 
     private var report: Report { result.report }
     private var video: VideoInfo { result.video }
@@ -11,6 +13,9 @@ struct ReportView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
+                if result.isSample {
+                    sampleBanner
+                }
                 hero
                     .popIn()
                 verdictCard
@@ -33,18 +38,41 @@ struct ReportView: View {
             .padding(.horizontal, 20)
             .padding(.top, 8)
             .padding(.bottom, 40)
+            // Keep a comfortable reading width on iPad.
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity)
         }
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Scout Report")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                ShareLink(item: shareText) {
+                Menu {
+                    if let shareImage {
+                        ShareLink(
+                            item: shareImage,
+                            preview: SharePreview(video.title, image: shareImage)
+                        ) {
+                            Label("Share as Picture", systemImage: "photo")
+                        }
+                    }
+                    ShareLink(item: shareText) {
+                        Label("Share as Text", systemImage: "text.alignleft")
+                    }
+                } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .accessibilityLabel("Share report")
             }
         }
+        .task {
+            if let image = await ShareCardRenderer.render(result) {
+                shareImage = Image(uiImage: image)
+            }
+        }
+        .onAppear { appeared = true }
+        .sensoryFeedback(trigger: appeared) { _, shown in shown ? report.verdict.feedback : nil }
+        .sensoryFeedback(.selection, trigger: selectedCategory)
         .sheet(item: $selectedCategory) { category in
             CategoryDetailSheet(
                 category: category,
@@ -56,6 +84,26 @@ struct ReportView: View {
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(32)
         }
+    }
+
+    // MARK: Sample banner
+
+    private var sampleBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(Theme.grape)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("This is a sample report")
+                    .font(.headline.weight(.heavy))
+                    .foregroundStyle(Theme.ink)
+                Text("The video is made up. Scout a real one to see your own.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.softInk)
+            }
+            Spacer(minLength: 0)
+        }
+        .cardStyle(tint: Theme.grape, padding: 14)
     }
 
     // MARK: Hero
@@ -90,7 +138,7 @@ struct ReportView: View {
                 .padding(16)
             }
             .overlay {
-                if let url = URL(string: video.url) {
+                if !result.isSample, let url = URL(string: video.url) {
                     Link(destination: url) {
                         Image(systemName: "play.circle.fill")
                             .font(.system(size: 54))
@@ -130,7 +178,10 @@ struct ReportView: View {
             }
 
             if result.childAge > 0 {
-                Label(report.fitForChild.label(age: result.childAge), systemImage: report.fitForChild.symbol)
+                Label(
+                    report.fitForChild.label(age: result.childAge, kidName: result.kidName),
+                    systemImage: report.fitForChild.symbol
+                )
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
@@ -177,7 +228,7 @@ struct ReportView: View {
                 .foregroundStyle(Theme.softInk)
 
             LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                columns: [GridItem(.adaptive(minimum: 130), spacing: 12)],
                 spacing: 12
             ) {
                 ForEach(Category.allCases) { category in

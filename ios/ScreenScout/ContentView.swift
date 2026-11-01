@@ -1,9 +1,15 @@
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @Environment(HistoryStore.self) private var history
     @Environment(AuthManager.self) private var auth
+    @Environment(PendingScout.self) private var pending
+    @Environment(\.scenePhase) private var scenePhase
+
     @AppStorage("childAge") private var childAge: Int = 0
+    @AppStorage("selectedKidId") private var selectedKidId: String = ""
+    @AppStorage("dismissedClipboardChange") private var dismissedClipboardChange: Int = -1
 
     @State private var urlText = ""
     @State private var isLoading = false
@@ -11,11 +17,35 @@ struct ContentView: View {
     @State private var errorMessage: String?
     @State private var path: [ReviewResult] = []
     @State private var showAccount = false
+    @State private var showKidEditor = false
+    @State private var clipboardHasLink = false
+    @State private var searchText = ""
+    @State private var verdictFilter: Verdict?
+    @State private var kidFilter: String?
     @FocusState private var urlFocused: Bool
+
+    private var kids: [Kid] { auth.me?.family.kidList ?? [] }
+
+    /// The kid picked in "Who's watching?", if that kid still exists.
+    private var selectedKid: Kid? { kids.first { $0.id == selectedKidId } }
 
     private var canSubmit: Bool {
         !isLoading && !urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+
+    private var filteredItems: [ReviewResult] {
+        history.items.filter { item in
+            let query = searchText.trimmingCharacters(in: .whitespaces)
+            let matchesSearch = query.isEmpty
+                || item.video.title.localizedCaseInsensitiveContains(query)
+                || item.video.channel.localizedCaseInsensitiveContains(query)
+            let matchesVerdict = verdictFilter == nil || item.report.verdict == verdictFilter
+            let matchesKid = kidFilter == nil || item.kidId == kidFilter
+            return matchesSearch && matchesVerdict && matchesKid
+        }
+    }
+
+    private var showFilters: Bool { history.items.count >= 4 }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -23,6 +53,10 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     header
                         .popIn()
+                    if clipboardHasLink && urlText.isEmpty && !isLoading {
+                        clipboardBanner
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                     scoutCard
                         .popIn(delay: 0.05)
                     if let errorMessage {
@@ -36,6 +70,9 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 40)
+                // Keep a comfortable reading width on iPad.
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.interactively)
             .refreshable {
@@ -44,6 +81,9 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showAccount) {
                 AccountView()
+            }
+            .sheet(isPresented: $showKidEditor) {
+                KidEditorSheet(kid: nil)
             }
             .background(Theme.background.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
@@ -58,6 +98,19 @@ struct ContentView: View {
             }
             .animation(.easeInOut(duration: 0.3), value: isLoading)
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: errorMessage)
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: clipboardHasLink)
+            .sensoryFeedback(trigger: isLoading) { _, started in started ? .impact(weight: .medium) : nil }
+            .sensoryFeedback(trigger: errorMessage) { _, message in message == nil ? nil : .error }
+            .onAppear {
+                checkClipboard()
+                handlePendingScout()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { checkClipboard() }
+            }
+            .onChange(of: pending.url) { _, _ in
+                handlePendingScout()
+            }
         }
     }
 
@@ -70,6 +123,8 @@ struct ContentView: View {
                 Text("Screen Scout")
                     .font(.largeTitle.weight(.heavy))
                     .foregroundStyle(Theme.ink)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
                 Text("Peek before they watch.")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.softInk)
@@ -84,6 +139,52 @@ struct ContentView: View {
             .accessibilityLabel("Account and family")
         }
         .padding(.top, 12)
+    }
+
+    // MARK: Copied-link banner
+
+    private var clipboardBanner: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Theme.sunshine.gradient)
+                Image(systemName: "doc.on.clipboard.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Theme.darkInk)
+            }
+            .frame(width: 40, height: 40)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Copied a link?")
+                    .font(.headline.weight(.heavy))
+                    .foregroundStyle(Theme.ink)
+                Text("Paste it to start scouting right away.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.softInk)
+            }
+
+            Spacer(minLength: 0)
+
+            PasteButton(payloadType: String.self) { strings in
+                Task { @MainActor in
+                    pasteAndScout(strings.first)
+                }
+            }
+            .labelStyle(.iconOnly)
+            .buttonBorderShape(.capsule)
+            .tint(Theme.grape)
+
+            Button {
+                dismissedClipboardChange = UIPasteboard.general.changeCount
+                clipboardHasLink = false
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(Theme.softInk)
+                    .padding(6)
+            }
+            .accessibilityLabel("Dismiss")
+        }
+        .cardStyle(tint: Theme.sunshine, padding: 14)
     }
 
     // MARK: Scout card
@@ -131,16 +232,35 @@ struct ContentView: View {
                 Task { @MainActor in
                     urlText = strings.first ?? ""
                     errorMessage = nil
+                    clipboardHasLink = false
                 }
             }
             .buttonBorderShape(.capsule)
             .tint(Theme.sunshine)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Who's watching?")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
-                AgePicker(selection: $childAge)
+                HStack {
+                    Text("Who's watching?")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Button {
+                        showKidEditor = true
+                    } label: {
+                        Label(kids.isEmpty ? "Add your kids" : "Add", systemImage: "plus")
+                            .font(.caption.weight(.heavy))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.white.opacity(0.2), in: Capsule())
+                    }
+                }
+                if !kids.isEmpty {
+                    KidPicker(kids: kids, selectedKidId: $selectedKidId)
+                }
+                if selectedKid == nil {
+                    AgePicker(selection: $childAge)
+                }
             }
 
             Button {
@@ -148,7 +268,7 @@ struct ContentView: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "binoculars.fill")
-                    Text("Scout This Video")
+                    Text(selectedKid.map { "Scout for \($0.name)" } ?? "Scout This Video")
                 }
                 .font(.headline.weight(.heavy))
                 .foregroundStyle(.white)
@@ -219,10 +339,33 @@ struct ContentView: View {
                 }
             }
 
+            if showFilters {
+                searchAndFilters
+            }
+
             if history.items.isEmpty {
-                EmptyHistoryCard()
+                EmptyHistoryCard {
+                    path.append(SampleData.review)
+                }
+            } else if filteredItems.isEmpty {
+                VStack(spacing: 8) {
+                    Text("🔍").font(.largeTitle)
+                    Text("No videos match")
+                        .font(.headline.weight(.heavy))
+                        .foregroundStyle(Theme.ink)
+                    Button("Clear filters") {
+                        withAnimation {
+                            searchText = ""
+                            verdictFilter = nil
+                            kidFilter = nil
+                        }
+                    }
+                    .font(.subheadline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .cardStyle(padding: 24)
             } else {
-                ForEach(Array(history.items.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
                     NavigationLink(value: item) {
                         ReviewCard(item: item)
                     }
@@ -244,7 +387,79 @@ struct ContentView: View {
         }
     }
 
+    private var searchAndFilters: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Theme.softInk)
+                TextField("Search your videos", text: $searchText)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Theme.softInk)
+                    }
+                    .accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(Theme.card, in: Capsule())
+            .overlay(Capsule().stroke(Theme.cardBorder, lineWidth: 1))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    FilterChip(title: "All", isOn: verdictFilter == nil && kidFilter == nil, color: Theme.grape) {
+                        verdictFilter = nil
+                        kidFilter = nil
+                    }
+                    ForEach(Verdict.allCases, id: \.self) { verdict in
+                        FilterChip(title: "\(verdict.emoji) \(verdict.label)", isOn: verdictFilter == verdict, color: verdict.color) {
+                            verdictFilter = verdictFilter == verdict ? nil : verdict
+                        }
+                    }
+                    ForEach(kids) { kid in
+                        FilterChip(title: kid.name, isOn: kidFilter == kid.id, color: kid.themeColor) {
+                            kidFilter = kidFilter == kid.id ? nil : kid.id
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .sensoryFeedback(.selection, trigger: verdictFilter)
+        .sensoryFeedback(.selection, trigger: kidFilter)
+    }
+
     // MARK: Actions
+
+    private func checkClipboard() {
+        let board = UIPasteboard.general
+        // hasURLs doesn't trigger the "Allow Paste" prompt.
+        clipboardHasLink = board.hasURLs && board.changeCount != dismissedClipboardChange
+    }
+
+    private func pasteAndScout(_ text: String?) {
+        dismissedClipboardChange = UIPasteboard.general.changeCount
+        clipboardHasLink = false
+        guard let text, !text.isEmpty else { return }
+        urlText = text
+        errorMessage = nil
+        if text.localizedCaseInsensitiveContains("youtu") {
+            Task { await runReview() }
+        }
+    }
+
+    private func handlePendingScout() {
+        guard let link = pending.url, !isLoading else { return }
+        pending.url = nil
+        urlText = link
+        path.removeAll()
+        Task { await runReview() }
+    }
 
     @MainActor
     private func runReview() async {
@@ -265,10 +480,12 @@ struct ContentView: View {
             isLoading = false
         }
 
+        let kid = selectedKid
         do {
             let result = try await APIClient.shared.review(
                 url: urlText,
-                childAge: childAge == 0 ? nil : childAge
+                childAge: kid == nil && childAge != 0 ? childAge : nil,
+                kidId: kid?.id
             )
             history.add(result)
             urlText = ""
@@ -279,6 +496,93 @@ struct ContentView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Kid picker
+
+struct KidPicker: View {
+    let kids: [Kid]
+    @Binding var selectedKidId: String
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(kids) { kid in
+                    chip(
+                        id: kid.id,
+                        selected: selectedKidId == kid.id,
+                        label: {
+                            HStack(spacing: 8) {
+                                Avatar(initials: kid.initial, color: kid.themeColor, size: 30)
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(kid.name)
+                                        .font(.subheadline.weight(.heavy))
+                                    Text("Age \(kid.age)")
+                                        .font(.caption2.weight(.bold))
+                                        .opacity(0.8)
+                                }
+                            }
+                        }
+                    )
+                    .accessibilityLabel("\(kid.name), age \(kid.age)")
+                }
+                chip(id: "", selected: selectedKidId.isEmpty || !kids.contains { $0.id == selectedKidId }, label: {
+                    Text("Other age")
+                        .font(.subheadline.weight(.heavy))
+                        .padding(.horizontal, 4)
+                })
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 2)
+        }
+        .sensoryFeedback(.selection, trigger: selectedKidId)
+    }
+
+    private func chip<Label: View>(id: String, selected: Bool, @ViewBuilder label: () -> Label) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                selectedKidId = id
+            }
+        } label: {
+            label()
+                .foregroundStyle(selected ? Theme.darkInk : .white)
+                .padding(.leading, 6)
+                .padding(.trailing, 12)
+                .frame(minHeight: 46)
+                .background {
+                    Capsule().fill(selected ? Theme.sunshine : Color.white.opacity(0.2))
+                }
+                .overlay {
+                    Capsule().stroke(.white.opacity(selected ? 0.9 : 0.3), lineWidth: 2)
+                }
+                .scaleEffect(selected ? 1.05 : 1)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+struct FilterChip: View {
+    let title: String
+    let isOn: Bool
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(response: 0.3)) { action() }
+        } label: {
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(isOn ? .white : Theme.ink)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(isOn ? AnyShapeStyle(color.gradient) : AnyShapeStyle(Theme.card), in: Capsule())
+                .overlay(Capsule().stroke(isOn ? Color.clear : Theme.cardBorder, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
 
@@ -303,6 +607,7 @@ struct AgePicker: View {
                 proxy.scrollTo(selection, anchor: .center)
             }
         }
+        .sensoryFeedback(.selection, trigger: selection)
     }
 
     private func chip(age: Int, label: String) -> some View {
@@ -367,6 +672,11 @@ struct ReviewCard: View {
                     VerdictPill(verdict: item.report.verdict)
                     AgeBadge(age: item.report.recommendedMinAge, compact: true)
                 }
+                if let kidName = item.kidName {
+                    Label("For \(kidName)", systemImage: "person.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.softInk)
+                }
             }
 
             Spacer(minLength: 0)
@@ -386,6 +696,8 @@ struct ReviewCard: View {
 }
 
 struct EmptyHistoryCard: View {
+    var showSample: (() -> Void)?
+
     var body: some View {
         VStack(spacing: 12) {
             ZStack {
@@ -403,6 +715,14 @@ struct EmptyHistoryCard: View {
                 .font(.subheadline)
                 .foregroundStyle(Theme.softInk)
                 .multilineTextAlignment(.center)
+            if let showSample {
+                Button(action: showSample) {
+                    Label("See a sample report", systemImage: "doc.text.magnifyingglass")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Theme.grape)
+                }
+                .padding(.top, 4)
+            }
         }
         .frame(maxWidth: .infinity)
         .cardStyle(padding: 24)
@@ -502,4 +822,5 @@ struct LoadingView: View {
     ContentView()
         .environment(HistoryStore())
         .environment(AuthManager())
+        .environment(PendingScout.shared)
 }

@@ -51,17 +51,37 @@ CREATE TABLE IF NOT EXISTS family_reviews (
     PRIMARY KEY (family_id, video_id, child_age)
 );
 
+-- Kid profiles, shared by the whole family. Age is stored as a birth year/month
+-- so it goes up on its own each year.
+CREATE TABLE IF NOT EXISTS kids (
+    id TEXT PRIMARY KEY,
+    family_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    birth_year INTEGER NOT NULL,
+    birth_month INTEGER NOT NULL,
+    color INTEGER NOT NULL DEFAULT 0,
+    created REAL
+);
+
 -- One row per new (paid) analysis, for monthly limits.
 CREATE TABLE IF NOT EXISTS review_events (
     family_id TEXT, user_id TEXT, video_id TEXT, created REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_family ON users(family_id);
+CREATE INDEX IF NOT EXISTS idx_kids_family ON kids(family_id);
 CREATE INDEX IF NOT EXISTS idx_events_family ON review_events(family_id, created);
 CREATE INDEX IF NOT EXISTS idx_events_user ON review_events(user_id, created);
 """
 
 _initialized = False
+
+
+def _migrate(conn) -> None:
+    """Add columns that older databases don't have yet."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(family_reviews)")}
+    if "kid_id" not in cols:
+        conn.execute("ALTER TABLE family_reviews ADD COLUMN kid_id TEXT")
 
 
 @contextmanager
@@ -74,6 +94,7 @@ def db():
     try:
         if not _initialized:
             conn.executescript(SCHEMA)
+            _migrate(conn)
             _initialized = True
         yield conn
         conn.commit()

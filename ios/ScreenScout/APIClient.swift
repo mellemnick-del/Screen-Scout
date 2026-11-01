@@ -179,17 +179,45 @@ struct APIClient {
         try await send("DELETE", "api/family/members/\(memberId)")
     }
 
+    // MARK: Kids
+
+    func addKid(name: String, age: Int) async throws -> Me {
+        struct Body: Encodable {
+            let name: String
+            let age: Int
+        }
+        return try await send("POST", "api/family/kids", body: Body(name: name, age: age))
+    }
+
+    func updateKid(_ kidId: String, name: String, age: Int) async throws -> Me {
+        struct Body: Encodable {
+            let name: String
+            let age: Int
+        }
+        return try await send("PATCH", "api/family/kids/\(kidId)", body: Body(name: name, age: age))
+    }
+
+    func deleteKid(_ kidId: String) async throws -> Me {
+        try await send("DELETE", "api/family/kids/\(kidId)")
+    }
+
     // MARK: Reviews
 
-    func review(url: String, childAge: Int?, refresh: Bool = false) async throws -> ReviewResult {
+    func review(url: String, childAge: Int?, kidId: String? = nil, refresh: Bool = false) async throws -> ReviewResult {
         struct Body: Encodable {
             let url: String
             let childAge: Int?
+            let kidId: String?
             let refresh: Bool
         }
         return try await send(
             "POST", "api/review",
-            body: Body(url: url.trimmingCharacters(in: .whitespacesAndNewlines), childAge: childAge, refresh: refresh)
+            body: Body(
+                url: url.trimmingCharacters(in: .whitespacesAndNewlines),
+                childAge: childAge,
+                kidId: kidId,
+                refresh: refresh
+            )
         )
     }
 
