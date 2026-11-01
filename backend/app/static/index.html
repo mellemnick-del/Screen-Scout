@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screen Scout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f6f5f1; --card: #ffffff; --ink: #1d2320; --muted: #5f6a64; --line: #e3e1da;
+  --brand: #2f5d46; --brand-ink: #ffffff;
+  --safe: #2e7d4f; --safe-bg: #e3f2e8;
+  --caution: #a8650a; --caution-bg: #fbf0dc;
+  --stop: #b3261e; --stop-bg: #fbe4e2;
+  --l0: #d9ddd9; --l1: #9fc9a8; --l2: #e8c063; --l3: #e48a4c; --l4: #c9423a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121614; --card: #1b201d; --ink: #e8ece9; --muted: #9aa49e; --line: #2b322e;
+    --brand: #6fae8b; --brand-ink: #0d1210;
+    --safe: #74c793; --safe-bg: #1c3125; --caution: #e9b25a; --caution-bg: #352a17;
+    --stop: #f08a80; --stop-bg: #3a1f1d; --l0: #333a36;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 Inter, system-ui, sans-serif; }
+.wrap { max-width: 860px; margin: 0 auto; padding: 28px 16px 64px; }
+header { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.logo { width: 40px; height: 40px; border-radius: 10px; background: var(--brand); display: grid; place-items: center; }
+h1 { font-size: 22px; margin: 0; }
+.tag { color: var(--muted); font-size: 14px; margin: 0; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+form { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; }
+input, select, button { font: inherit; border-radius: 10px; border: 1px solid var(--line); padding: 11px 13px; background: var(--card); color: var(--ink); }
+input { min-width: 0; }
+button { background: var(--brand); color: var(--brand-ink); border: 0; font-weight: 600; cursor: pointer; }
+button:disabled { opacity: .6; cursor: wait; }
+@media (max-width: 620px) { form { grid-template-columns: 1fr 1fr; } form input { grid-column: 1 / -1; } }
+.status { color: var(--muted); font-size: 14px; margin-top: 10px; min-height: 20px; }
+.err { color: var(--stop); }
+.vid { display: grid; grid-template-columns: 200px 1fr; gap: 16px; align-items: start; }
+.vid img { width: 100%; border-radius: 10px; aspect-ratio: 16/9; object-fit: cover; background: var(--line); }
+@media (max-width: 620px) { .vid { grid-template-columns: 1fr; } }
+.vid h2 { font-size: 18px; margin: 0 0 4px; }
+.meta { color: var(--muted); font-size: 14px; }
+.verdict { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
+.pill { font-weight: 600; font-size: 14px; padding: 5px 12px; border-radius: 999px; }
+.v-safe { background: var(--safe-bg); color: var(--safe); }
+.v-caution { background: var(--caution-bg); color: var(--caution); }
+.v-not_recommended { background: var(--stop-bg); color: var(--stop); }
+.pill.plain { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+.headline { font-size: 17px; font-weight: 600; margin: 6px 0 0; }
+h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+.cat { display: grid; grid-template-columns: 210px 120px 1fr; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); align-items: center; }
+.cat:first-of-type { border-top: 0; }
+.cat .name { font-weight: 500; }
+.cat .details { color: var(--muted); font-size: 14px; }
+@media (max-width: 620px) { .cat { grid-template-columns: 1fr auto; } .cat .details { grid-column: 1 / -1; } }
+.meter { display: flex; gap: 3px; align-items: center; }
+.meter span { width: 18px; height: 8px; border-radius: 2px; background: var(--l0); }
+.meter .lvl { width: auto; height: auto; background: none; font-size: 12px; color: var(--muted); margin-left: 6px; }
+ul { margin: 0; padding-left: 20px; }
+li { margin: 4px 0; }
+.moment { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.moment:first-child { border-top: 0; }
+.moment a { color: var(--brand); font-weight: 600; text-decoration: none; font-variant-numeric: tabular-nums; }
+.moment small { color: var(--muted); display: block; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 620px) { .grid2 { grid-template-columns: 1fr; } }
+.fine { color: var(--muted); font-size: 13px; }
+.hist { display: grid; gap: 8px; }
+.hrow { display: grid; grid-template-columns: 96px 1fr auto; gap: 12px; align-items: center; cursor: pointer; padding: 6px; border-radius: 10px; }
+.hrow:hover { background: var(--bg); }
+.hrow img { width: 96px; aspect-ratio: 16/9; object-fit: cover; border-radius: 6px; background: var(--line); }
+.hrow .t { font-weight: 500; font-size: 15px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="color:var(--brand-ink)"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+    </div>
+    <div>
+      <h1>Screen Scout</h1>
+      <p class="tag">Know what's in the video before your kid watches it.</p>
+    </div>
+  </header>
+
+  <div class="card">
+    <form id="f">
+      <input id="url" type="url" placeholder="Paste a YouTube or YouTube Kids link" required>
+      <select id="age" aria-label="Child's age">
+        <option value="">Child's age</option>
+      </select>
+      <button id="go" type="submit">Review video</button>
+    </form>
+    <div id="status" class="status"></div>
+  </div>
+
+  <div id="result" class="hidden"></div>
+
+  <div class="card" id="histCard">
+    <h3>Past reviews</h3>
+    <div id="hist" class="hist"><span class="fine">Nothing reviewed yet.</span></div>
+  </div>
+</div>
+
+<script>
+const CAT_LABELS = {
+  violence: "Violence",
+  scary_or_disturbing: "Scary or disturbing",
+  language: "Language",
+  sexual_content: "Sexual content",
+  dangerous_imitable_behavior: "Dangerous stunts kids may copy",
+  bad_behavior_and_attitudes: "Bad behavior and attitudes",
+  commercialism: "Ads and consumerism",
+  misleading_or_hijacked_characters: "Misused kids' characters",
+  overstimulation: "Overstimulation",
+};
+const LEVELS = ["none", "mild", "moderate", "strong", "severe"];
+const LCOLORS = ["--l1", "--l1", "--l2", "--l3", "--l4"];
+const VERDICT = { safe: "Safe", caution: "Use caution", not_recommended: "Not recommended" };
+const FIT = { good_fit: "Good fit for your child", watch_together: "Watch together", skip: "Skip this one" };
+
+const ageSel = document.getElementById("age");
+for (let a = 2; a <= 17; a++) ageSel.add(new Option(`${a} years old`, a));
+try { const saved = localStorage.getItem("scout-age"); if (saved) ageSel.value = saved; } catch {}
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = s => { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; };
+const toSec = ts => { const p = String(ts).split(":").map(Number); if (p.some(isNaN)) return null; return p.reduce((a, b) => a * 60 + b, 0); };
+
+function meter(level) {
+  const n = LEVELS.indexOf(level);
+  let bars = "";
+  for (let i = 1; i <= 4; i++) bars += `<span style="${i <= n ? `background:var(${LCOLORS[n]})` : ""}"></span>`;
+  return `<div class="meter" role="img" aria-label="${esc(level)}">${bars}<span class="lvl">${esc(level)}</span></div>`;
+}
+
+function render(data) {
+  const { video: v, report: r } = data;
+  const thumb = v.thumbnail_url || `https://i.ytimg.com/vi/${v.video_id}/hqdefault.jpg`;
+  const cats = Object.keys(CAT_LABELS).map(k => r.categories.find(c => c.category === k) || { category: k, level: "none", details: "Nothing found." });
+  const moments = r.flagged_moments.length ? r.flagged_moments.map(m => {
+    const s = toSec(m.timestamp);
+    const ts = s != null ? `<a href="${esc(v.url)}&t=${s}s" target="_blank" rel="noopener">${esc(m.timestamp)}</a>` : `<span>${esc(m.timestamp)}</span>`;
+    return `<div class="moment">${ts}<div>${esc(m.description)}<small>${esc(CAT_LABELS[m.category] || m.category)}</small></div></div>`;
+  }).join("") : `<span class="fine">Nothing specific to flag.</span>`;
+  const list = a => a.length ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<span class="fine">None noted.</span>`;
+
+  const el = document.getElementById("result");
+  el.innerHTML = `
+    <div class="card">
+      <div class="vid">
+        <a href="${esc(v.url)}" target="_blank" rel="noopener"><img src="${esc(thumb)}" alt=""></a>
+        <div>
+          <h2>${esc(v.title)}</h2>
+          <div class="meta">${esc(v.channel)} · ${fmt(v.duration)}</div>
+          <div class="verdict">
+            <span class="pill v-${esc(r.verdict)}">${VERDICT[r.verdict]}</span>
+            <span class="pill plain">Ages ${esc(r.recommended_min_age)}+</span>
+            ${data.child_age ? `<span class="pill plain">${FIT[r.fit_for_child]}</span>` : ""}
+          </div>
+          <p class="headline">${esc(r.headline)}</p>
+        </div>
+      </div>
+    </div>
+    <div class="card"><h3>What happens in it</h3><p style="margin:0">${esc(r.summary)}</p></div>
+    <div class="card"><h3>Content breakdown</h3>
+      ${cats.map(c => `<div class="cat"><div class="name">${esc(CAT_LABELS[c.category])}</div>${meter(c.level)}<div class="details">${esc(c.details)}</div></div>`).join("")}
+      <div class="cat"><div class="name">Educational value</div>${meter(r.educational_value)}<div class="details"></div></div>
+    </div>
+    <div class="card"><h3>Moments to know about</h3>${moments}</div>
+    <div class="grid2">
+      <div class="card"><h3>The good stuff</h3>${list(r.positives)}</div>
+      <div class="card"><h3>Talk about it</h3>${list(r.talk_about_it)}</div>
+    </div>
+    <p class="fine">Confidence: <b>${esc(r.confidence)}</b>. ${esc(r.confidence_reason)}
+      Reviewed ${v.frames_reviewed} frames${v.had_transcript ? " and the full transcript" : ", no transcript available"}.
+      ${data.cached ? `Saved review from ${new Date(data.created * 1000).toLocaleDateString()}. <a href="#" id="redo">Re-run</a>.` : ""}
+      AI reviews can miss things. Spot-check anything that matters.</p>`;
+  el.classList.remove("hidden");
+  const redo = document.getElementById("redo");
+  if (redo) redo.onclick = e => { e.preventDefault(); run(v.url, data.child_age || "", true); };
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+const statusEl = document.getElementById("status");
+const steps = ["Fetching the video…", "Reading the captions…", "Looking through the frames…", "Writing up the review…"];
+
+async function run(url, age, refresh = false) {
+  const btn = document.getElementById("go");
+  btn.disabled = true; statusEl.className = "status";
+  let i = 0; statusEl.textContent = steps[0];
+  const tick = setInterval(() => { i = Math.min(i + 1, steps.length - 1); statusEl.textContent = steps[i]; }, 7000);
+  try {
+    const res = await fetch("/api/review", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, child_age: age ? Number(age) : null, refresh }) });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Something went wrong.");
+    statusEl.textContent = "";
+    render(body); loadHistory();
+  } catch (e) {
+    statusEl.className = "status err"; statusEl.textContent = e.message;
+  } finally { clearInterval(tick); btn.disabled = false; }
+}
+
+document.getElementById("f").onsubmit = e => {
+  e.preventDefault();
+  try { localStorage.setItem("scout-age", ageSel.value); } catch {}
+  run(document.getElementById("url").value, ageSel.value);
+};
+
+async function loadHistory() {
+  const box = document.getElementById("hist");
+  try {
+    const rows = await (await fetch("/api/history")).json();
+    if (!rows.length) return;
+    box.innerHTML = "";
+    for (const row of rows) {
+      const d = document.createElement("div"); d.className = "hrow";
+      const thumb = row.video.thumbnail_url || `https://i.ytimg.com/vi/${row.video_id}/mqdefault.jpg`;
+      d.innerHTML = `<img src="${esc(thumb)}" alt=""><div><div class="t">${esc(row.video.title)}</div>
+        <div class="meta">${esc(row.video.channel)}${row.child_age ? ` · for age ${row.child_age}` : ""}</div></div>
+        <span class="pill v-${esc(row.report.verdict)}">${VERDICT[row.report.verdict]}</span>`;
+      d.onclick = () => render({ ...row, cached: true });
+      box.appendChild(d);
+    }
+  } catch {}
+}
+loadHistory();
+</script>
+</body>
+</html>

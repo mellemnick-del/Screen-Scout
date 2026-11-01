@@ -1,0 +1,6 @@
+anthropic>=2.3.0
+fastapi>=0.115
+uvicorn>=0.30
+yt-dlp[default]>=2025.11.12
+youtube-transcript-api>=1.2
+pydantic>=2.7
