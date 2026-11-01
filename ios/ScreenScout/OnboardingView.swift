@@ -84,6 +84,7 @@ struct OnboardingView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
             }
+            .frame(maxWidth: 560)
         }
         .sensoryFeedback(.selection, trigger: page)
         .sheet(isPresented: $showSample) {

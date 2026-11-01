@@ -6,6 +6,7 @@ struct ContentView: View {
     @Environment(AuthManager.self) private var auth
     @Environment(PendingScout.self) private var pending
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     @AppStorage("childAge") private var childAge: Int = 0
     @AppStorage("selectedKidId") private var selectedKidId: String = ""
@@ -16,6 +17,7 @@ struct ContentView: View {
     @State private var stepIndex = 0
     @State private var errorMessage: String?
     @State private var path: [ReviewResult] = []
+    @State private var selected: ReviewResult?
     @State private var showAccount = false
     @State private var showKidEditor = false
     @State private var clipboardHasLink = false
@@ -48,69 +50,122 @@ struct ContentView: View {
     private var showFilters: Bool { history.items.count >= 4 }
 
     var body: some View {
+        Group {
+            if sizeClass == .regular {
+                splitLayout
+            } else {
+                stackLayout
+            }
+        }
+        .sheet(isPresented: $showAccount) {
+            AccountView()
+        }
+        .sheet(isPresented: $showKidEditor) {
+            KidEditorSheet(kid: nil)
+        }
+        .overlay {
+            if isLoading {
+                LoadingView(stepIndex: stepIndex)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: isLoading)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: errorMessage)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: clipboardHasLink)
+        .sensoryFeedback(trigger: isLoading) { _, started in started ? .impact(weight: .medium) : nil }
+        .sensoryFeedback(trigger: errorMessage) { _, message in message == nil ? nil : .error }
+        .onAppear {
+            checkClipboard()
+            handlePendingScout()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { checkClipboard() }
+        }
+        .onChange(of: pending.url) { _, _ in
+            handlePendingScout()
+        }
+        // Folding or unfolding an iPhone Duo keeps the open report on screen.
+        .onChange(of: sizeClass) { _, newClass in
+            if newClass == .regular {
+                selected = path.last ?? selected
+                path.removeAll()
+            } else if let selected {
+                path = [selected]
+            }
+        }
+    }
+
+    // MARK: Layouts
+
+    /// iPhone, and the outer screen of iPhone Duo: one screen at a time.
+    private var stackLayout: some View {
         NavigationStack(path: $path) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    header
-                        .popIn()
-                    if clipboardHasLink && urlText.isEmpty && !isLoading {
-                        clipboardBanner
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                    scoutCard
-                        .popIn(delay: 0.05)
-                    if let errorMessage {
-                        ErrorBanner(message: errorMessage) {
-                            withAnimation { self.errorMessage = nil }
-                        }
-                        .transition(.scale(scale: 0.95).combined(with: .opacity))
-                    }
-                    historySection
-                        .popIn(delay: 0.1)
+            home
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: ReviewResult.self) { result in
+                    ReportView(result: result)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 40)
-                // Keep a comfortable reading width on iPad.
-                .frame(maxWidth: 680)
-                .frame(maxWidth: .infinity)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .refreshable {
-                await history.refresh()
-                await auth.refreshMe()
-            }
-            .sheet(isPresented: $showAccount) {
-                AccountView()
-            }
-            .sheet(isPresented: $showKidEditor) {
-                KidEditorSheet(kid: nil)
-            }
-            .background(Theme.background.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: ReviewResult.self) { result in
-                ReportView(result: result)
-            }
-            .overlay {
-                if isLoading {
-                    LoadingView(stepIndex: stepIndex)
-                        .transition(.opacity)
+        }
+    }
+
+    /// The inner screen of iPhone Duo, and iPad: videos on the left, report on the right.
+    private var splitLayout: some View {
+        NavigationSplitView {
+            home
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationSplitViewColumnWidth(min: 340, ideal: 400, max: 460)
+        } detail: {
+            NavigationStack {
+                if let selected {
+                    ReportView(result: selected)
+                        .id(selected.id)
+                } else {
+                    ReportPlaceholder()
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: isLoading)
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: errorMessage)
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: clipboardHasLink)
-            .sensoryFeedback(trigger: isLoading) { _, started in started ? .impact(weight: .medium) : nil }
-            .sensoryFeedback(trigger: errorMessage) { _, message in message == nil ? nil : .error }
-            .onAppear {
-                checkClipboard()
-                handlePendingScout()
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    private var home: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                header
+                    .popIn()
+                if clipboardHasLink && urlText.isEmpty && !isLoading {
+                    clipboardBanner
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                scoutCard
+                    .popIn(delay: 0.05)
+                if let errorMessage {
+                    ErrorBanner(message: errorMessage) {
+                        withAnimation { self.errorMessage = nil }
+                    }
+                    .transition(.scale(scale: 0.95).combined(with: .opacity))
+                }
+                historySection
+                    .popIn(delay: 0.1)
             }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active { checkClipboard() }
-            }
-            .onChange(of: pending.url) { _, _ in
-                handlePendingScout()
-            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 40)
+            .frame(maxWidth: 680)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .refreshable {
+            await history.refresh()
+            await auth.refreshMe()
+        }
+        .background(Theme.background.ignoresSafeArea())
+    }
+
+    /// Shows a report: pushes it on iPhone, or puts it on the right on the big screen.
+    private func open(_ result: ReviewResult) {
+        if sizeClass == .regular {
+            withAnimation(.easeInOut(duration: 0.25)) { selected = result }
+        } else {
+            path.append(result)
         }
     }
 
@@ -345,7 +400,7 @@ struct ContentView: View {
 
             if history.items.isEmpty {
                 EmptyHistoryCard {
-                    path.append(SampleData.review)
+                    open(SampleData.review)
                 }
             } else if filteredItems.isEmpty {
                 VStack(spacing: 8) {
@@ -366,12 +421,15 @@ struct ContentView: View {
                 .cardStyle(padding: 24)
             } else {
                 ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
-                    NavigationLink(value: item) {
-                        ReviewCard(item: item)
+                    Button {
+                        open(item)
+                    } label: {
+                        ReviewCard(item: item, isSelected: sizeClass == .regular && selected?.id == item.id)
                     }
                     .buttonStyle(BouncyButtonStyle())
                     .contextMenu {
                         Button(role: .destructive) {
+                            if selected?.id == item.id { selected = nil }
                             Task { await history.delete(item) }
                         } label: {
                             Label("Delete Review", systemImage: "trash")
@@ -458,6 +516,7 @@ struct ContentView: View {
         pending.url = nil
         urlText = link
         path.removeAll()
+        selected = nil
         Task { await runReview() }
     }
 
@@ -489,7 +548,7 @@ struct ContentView: View {
             )
             history.add(result)
             urlText = ""
-            path.append(result)
+            open(result)
             await auth.refreshMe()
         } catch APIError.unauthorized {
             // The app has already returned to the sign-in screen.
@@ -642,6 +701,7 @@ struct AgePicker: View {
 
 struct ReviewCard: View {
     let item: ReviewResult
+    var isSelected = false
 
     var body: some View {
         HStack(spacing: 14) {
@@ -689,7 +749,7 @@ struct ReviewCard: View {
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Theme.cardBorder, lineWidth: 1)
+                .stroke(isSelected ? Theme.grape : Theme.cardBorder, lineWidth: isSelected ? 2.5 : 1)
         }
         .shadow(color: .black.opacity(0.05), radius: 10, y: 5)
     }
@@ -759,6 +819,30 @@ struct ErrorBanner: View {
     }
 }
 
+// MARK: - Big-screen placeholder
+
+/// The right side of the inner iPhone Duo screen (or iPad) before a video is picked.
+struct ReportPlaceholder: View {
+    var body: some View {
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            VStack(spacing: 18) {
+                ScoutBadge(size: 110)
+                Text("Pick a video")
+                    .font(.title.weight(.heavy))
+                    .foregroundStyle(Theme.ink)
+                Text("Choose a scouted video on the left to see its report here, or paste a new link to scout one.")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Theme.softInk)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+            }
+            .padding(32)
+        }
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
 // MARK: - Loading
 
 struct LoadingView: View {
@@ -814,6 +898,7 @@ struct LoadingView: View {
                 .cardStyle(padding: 20)
             }
             .padding(28)
+            .frame(maxWidth: 480)
         }
     }
 }

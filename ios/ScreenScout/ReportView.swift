@@ -12,34 +12,17 @@ struct ReportView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
-                if result.isSample {
-                    sampleBanner
-                }
-                hero
-                    .popIn()
-                verdictCard
-                    .popIn(delay: 0.06)
-                summaryCard
-                    .popIn(delay: 0.12)
-                breakdownCard
-                    .popIn(delay: 0.18)
-                learningCard
-                    .popIn(delay: 0.22)
-                momentsCard
-                    .popIn(delay: 0.26)
-                goodStuffCard
-                    .popIn(delay: 0.3)
-                talkCard
-                    .popIn(delay: 0.34)
-                howWeScouted
-                    .popIn(delay: 0.38)
+            // Two columns when there's room (inner iPhone Duo screen, iPad),
+            // one column otherwise.
+            ViewThatFits(in: .horizontal) {
+                wideLayout
+                    .frame(minWidth: 760, maxWidth: 1100)
+                narrowLayout
+                    .frame(maxWidth: 720)
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
             .padding(.bottom, 40)
-            // Keep a comfortable reading width on iPad.
-            .frame(maxWidth: 720)
             .frame(maxWidth: .infinity)
         }
         .background(Theme.background.ignoresSafeArea())
@@ -83,6 +66,68 @@ struct ReportView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(32)
+        }
+    }
+
+    // MARK: Layouts
+
+    private var narrowLayout: some View {
+        VStack(spacing: 18) {
+            if result.isSample {
+                sampleBanner
+            }
+            hero
+                .popIn()
+            verdictCard
+                .popIn(delay: 0.06)
+            summaryCard
+                .popIn(delay: 0.12)
+            breakdownCard
+                .popIn(delay: 0.18)
+            learningCard
+                .popIn(delay: 0.22)
+            momentsCard
+                .popIn(delay: 0.26)
+            goodStuffCard
+                .popIn(delay: 0.3)
+            talkCard
+                .popIn(delay: 0.34)
+            howWeScouted
+                .popIn(delay: 0.38)
+        }
+    }
+
+    private var wideLayout: some View {
+        VStack(spacing: 18) {
+            if result.isSample {
+                sampleBanner
+            }
+            HStack(alignment: .top, spacing: 18) {
+                VStack(spacing: 18) {
+                    hero
+                        .popIn()
+                    verdictCard
+                        .popIn(delay: 0.06)
+                    summaryCard
+                        .popIn(delay: 0.12)
+                    learningCard
+                        .popIn(delay: 0.18)
+                    howWeScouted
+                        .popIn(delay: 0.24)
+                }
+                .frame(maxWidth: .infinity)
+                VStack(spacing: 18) {
+                    breakdownCard
+                        .popIn(delay: 0.08)
+                    momentsCard
+                        .popIn(delay: 0.14)
+                    goodStuffCard
+                        .popIn(delay: 0.2)
+                    talkCard
+                        .popIn(delay: 0.26)
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
     }
 

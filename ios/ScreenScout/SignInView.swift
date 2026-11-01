@@ -104,6 +104,8 @@ struct SignInView: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 32)
+                .frame(maxWidth: 520)
+                .frame(maxWidth: .infinity)
             }
 
             if isWorking {
