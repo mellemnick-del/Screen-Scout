@@ -101,7 +101,9 @@ enum Level: String, Codable, Hashable, CaseIterable {
     var index: Int { Level.allCases.firstIndex(of: self) ?? 0 }
 }
 
+/// The order here is the order the tiles appear in a report.
 enum Category: String, Codable, Hashable, CaseIterable, Identifiable {
+    case overstimulation
     case violence
     case scaryOrDisturbing = "scary_or_disturbing"
     case language
@@ -110,7 +112,6 @@ enum Category: String, Codable, Hashable, CaseIterable, Identifiable {
     case badBehaviorAndAttitudes = "bad_behavior_and_attitudes"
     case commercialism
     case misleadingOrHijackedCharacters = "misleading_or_hijacked_characters"
-    case overstimulation
 
     var id: String { rawValue }
 }
