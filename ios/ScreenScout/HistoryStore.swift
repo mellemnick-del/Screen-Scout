@@ -1,30 +1,57 @@
 import SwiftUI
 
-/// Past reviews, saved on the phone so parents can look them up again offline.
+/// The family's scouted videos. Lives on the server so every device and every
+/// family member sees the same list. A copy is kept on the phone for offline viewing.
 @Observable
 final class HistoryStore {
     private(set) var items: [ReviewResult] = []
 
     private let fileURL = URL.documentsDirectory.appending(path: "history.json")
+    private var signedOutObserver: NSObjectProtocol?
 
     init() {
         load()
+        signedOutObserver = NotificationCenter.default.addObserver(
+            forName: .scoutSignedOut, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.clear()
+        }
     }
 
+    /// Adds a just-finished review to the top of the list right away.
     func add(_ result: ReviewResult) {
         items.removeAll { $0.id == result.id }
         items.insert(result, at: 0)
         save()
     }
 
-    func remove(at offsets: IndexSet) {
-        items.remove(atOffsets: offsets)
+    /// Pulls the latest family list from the server.
+    @MainActor
+    func refresh() async {
+        guard let fresh = try? await APIClient.shared.reviews() else { return }
+        items = fresh
         save()
     }
 
-    func remove(_ result: ReviewResult) {
+    @MainActor
+    func delete(_ result: ReviewResult) async {
         items.removeAll { $0.id == result.id }
         save()
+        try? await APIClient.shared.deleteReview(result)
+    }
+
+    /// After signing in, move any reviews saved on this phone into the family, then sync.
+    @MainActor
+    func didSignIn() async {
+        if !items.isEmpty {
+            try? await APIClient.shared.importReviews(items)
+        }
+        await refresh()
+    }
+
+    func clear() {
+        items = []
+        try? FileManager.default.removeItem(at: fileURL)
     }
 
     private func load() {

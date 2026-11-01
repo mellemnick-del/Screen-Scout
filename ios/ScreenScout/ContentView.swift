@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(HistoryStore.self) private var history
+    @Environment(AuthManager.self) private var auth
     @AppStorage("childAge") private var childAge: Int = 0
 
     @State private var urlText = ""
@@ -9,6 +10,7 @@ struct ContentView: View {
     @State private var stepIndex = 0
     @State private var errorMessage: String?
     @State private var path: [ReviewResult] = []
+    @State private var showAccount = false
     @FocusState private var urlFocused: Bool
 
     private var canSubmit: Bool {
@@ -36,6 +38,13 @@ struct ContentView: View {
                 .padding(.bottom, 40)
             }
             .scrollDismissesKeyboard(.interactively)
+            .refreshable {
+                await history.refresh()
+                await auth.refreshMe()
+            }
+            .sheet(isPresented: $showAccount) {
+                AccountView()
+            }
             .background(Theme.background.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: ReviewResult.self) { result in
@@ -65,6 +74,14 @@ struct ContentView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.softInk)
             }
+            Spacer(minLength: 0)
+            Button {
+                showAccount = true
+            } label: {
+                Avatar(initials: auth.me?.user.initials ?? "?", color: Theme.coral, size: 46)
+                    .shadow(color: Theme.coral.opacity(0.35), radius: 6, y: 3)
+            }
+            .accessibilityLabel("Account and family")
         }
         .padding(.top, 12)
     }
@@ -144,6 +161,13 @@ struct ContentView: View {
             .buttonStyle(BouncyButtonStyle())
             .disabled(!canSubmit)
             .opacity(canSubmit ? 1 : 0.6)
+
+            if let usage = auth.me?.family.usage, !usage.isUnlimited {
+                Text(usage.remaining == 1 ? "1 new review left this month" : "\(usage.remaining) new reviews left this month")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .frame(maxWidth: .infinity)
+            }
         }
         .padding(20)
         .background {
@@ -174,9 +198,16 @@ struct ContentView: View {
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Scouted Videos")
-                    .font(.title3.weight(.heavy))
-                    .foregroundStyle(Theme.ink)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Scouted Videos")
+                        .font(.title3.weight(.heavy))
+                        .foregroundStyle(Theme.ink)
+                    if let family = auth.me?.family, family.members.count > 1 {
+                        Text("Shared with \(family.name)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.softInk)
+                    }
+                }
                 Spacer()
                 if !history.items.isEmpty {
                     Text("\(history.items.count)")
@@ -198,7 +229,7 @@ struct ContentView: View {
                     .buttonStyle(BouncyButtonStyle())
                     .contextMenu {
                         Button(role: .destructive) {
-                            withAnimation { history.remove(item) }
+                            Task { await history.delete(item) }
                         } label: {
                             Label("Delete Review", systemImage: "trash")
                         }
@@ -242,6 +273,9 @@ struct ContentView: View {
             history.add(result)
             urlText = ""
             path.append(result)
+            await auth.refreshMe()
+        } catch APIError.unauthorized {
+            // The app has already returned to the sign-in screen.
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -467,4 +501,5 @@ struct LoadingView: View {
 #Preview {
     ContentView()
         .environment(HistoryStore())
+        .environment(AuthManager())
 }

@@ -115,6 +115,64 @@ enum Category: String, Codable, Hashable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+// MARK: - Accounts and families (from GET /api/me)
+
+struct Me: Codable, Hashable {
+    let user: UserInfo
+    let family: FamilyInfo
+}
+
+struct UserInfo: Codable, Hashable {
+    let id: String
+    let name: String?
+    let email: String?
+
+    var displayName: String { name ?? "Parent" }
+
+    var initials: String {
+        let letters = displayName.split(separator: " ").prefix(2).compactMap { $0.first }
+        return letters.isEmpty ? "?" : String(letters).uppercased()
+    }
+}
+
+struct FamilyInfo: Codable, Hashable {
+    let id: String
+    let name: String
+    let inviteCode: String
+    let isOwner: Bool
+    let members: [Member]
+    let maxMembers: Int
+    let usage: Usage
+
+    /// "ABC123" shown as "ABC-123" so it's easier to read out loud.
+    var formattedInviteCode: String {
+        guard inviteCode.count == 6 else { return inviteCode }
+        return "\(inviteCode.prefix(3))-\(inviteCode.suffix(3))"
+    }
+}
+
+struct Member: Codable, Hashable, Identifiable {
+    let id: String
+    let name: String
+    let isOwner: Bool
+    let isYou: Bool
+
+    var initials: String {
+        let letters = name.split(separator: " ").prefix(2).compactMap { $0.first }
+        return letters.isEmpty ? "?" : String(letters).uppercased()
+    }
+}
+
+struct Usage: Codable, Hashable {
+    let used: Int
+    let limit: Int
+    let resetsAt: Double
+
+    var isUnlimited: Bool { limit <= 0 }
+    var remaining: Int { max(limit - used, 0) }
+    var resetDate: Date { Date(timeIntervalSince1970: resetsAt) }
+}
+
 enum JSONCoding {
     static let decoder: JSONDecoder = {
         let d = JSONDecoder()
