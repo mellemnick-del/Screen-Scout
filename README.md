@@ -21,26 +21,24 @@ The backend gathers three kinds of evidence:
 
 ## Run it on your Mac
 
-**1. Backend** (Terminal):
+**First time:** in Xcode choose **Integrate → Clone…**, paste
+`https://github.com/mellemnick-del/Screen-Scout.git`, and save it in Documents.
+Then in Signing & Capabilities pick your Team.
+
+**Start the server** (Terminal):
 
 ```bash
-cd backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-brew install ffmpeg deno
-export ANTHROPIC_API_KEY=sk-ant-...
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+cd ~/Documents/Screen-Scout/backend && ./start.sh
 ```
 
-Visit http://127.0.0.1:8000/health to check the server is up.
+The first run sets up Python on its own. You need `brew install ffmpeg deno` once, and
+`ANTHROPIC_API_KEY` saved in `~/.zshrc`. Saved reviews and accounts live in `~/ScreenScout-data`.
 
-**2. App:** double-click `ios/ScreenScout.xcodeproj`, choose an iPhone simulator, press Run.
+**Run the app:** press ▶ Run in Xcode. The app talks to the server at the address in
+`ios/ScreenScout/Config.swift`.
 
-If Xcode refuses to open the project file, run `brew install xcodegen && xcodegen` inside
-`ios/` to regenerate it.
-
-To run on your own iPhone: Signing & Capabilities, pick your Team, then set
-`Config.swift` to your Mac's Wi-Fi IP (e.g. `http://192.168.1.20:8000`).
+**Get updates:** in Xcode choose **Integrate → Pull…**, then Run. If the server changed,
+stop it with Ctrl + C and run `./start.sh` again.
 
 ## Accounts and families
 
