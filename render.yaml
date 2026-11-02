@@ -1,0 +1,27 @@
+# Tells Render how to run the Screen Scout server.
+# Render reads this when you choose New > Blueprint and pick this repository.
+services:
+  - type: web
+    name: screen-scout
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    region: ohio
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true            # every update pushed to GitHub goes live on its own
+    disk:
+      name: data
+      mountPath: /data          # accounts, families and saved reviews live here
+      sizeGB: 1
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false             # Render asks you to paste it in; it never goes in GitHub
+      - key: SCOUT_SUPPORT_EMAIL
+        sync: false
+      - key: SCOUT_APPLE_BUNDLE_ID
+        value: com.example.screenscout
+      - key: SCOUT_MONTHLY_LIMIT
+        value: "50"
+      - key: SCOUT_DB
+        value: /data/reviews.db
