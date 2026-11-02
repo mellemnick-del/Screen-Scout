@@ -34,8 +34,9 @@ cd ~/Documents/Screen-Scout/backend && ./start.sh
 The first run sets up Python on its own. You need `brew install ffmpeg deno` once, and
 `ANTHROPIC_API_KEY` saved in `~/.zshrc`. Saved reviews and accounts live in `~/ScreenScout-data`.
 
-**Run the app:** press ▶ Run in Xcode. The app talks to the server at the address in
-`ios/ScreenScout/Config.swift`.
+**Run the app:** press ▶ Run in Xcode. The app talks to the online server at
+https://screen-scout-pz4e.onrender.com (set in `ios/ScreenScout/Config.swift`). Running the
+server on your Mac is only needed for testing server changes locally.
 
 **Get updates:** in Xcode choose **Integrate → Pull…**, then Run. If the server changed,
 stop it with Ctrl + C and run `./start.sh` again.
